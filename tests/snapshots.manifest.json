@@ -1,0 +1,112 @@
+{
+  "release_tag": "snapshots-v1",
+  "base_url": "https://github.com/yasushisakai/pypv/releases/download/snapshots-v1",
+  "ppv_git_sha": "d8203eefd06cd241371c99cc95ac0bb6c10aea8c",
+  "files": [
+    {
+      "name": "n10000_seed0.npz",
+      "sha256": "894c53fba77c59a43f81b6b8de01374c77ee428d2deda43666ca610dfb4b8611",
+      "size": 8197407
+    },
+    {
+      "name": "n10000_seed1.npz",
+      "sha256": "189cf1d9ed350268496710a33f89c5584b2b01ddfa18fcc2779e200749bec2de",
+      "size": 8196890
+    },
+    {
+      "name": "n10000_seed2.npz",
+      "sha256": "74e21f9dde3d78187ac60c1732be3dac0e2fdc0ba1fd2aa2447e73946c870728",
+      "size": 8197124
+    },
+    {
+      "name": "n1210_seed0.npz",
+      "sha256": "a4042e3524c46980eac8f0b773ff1213742c5bc882646b1c2649bbc24b8dcbaf",
+      "size": 978961
+    },
+    {
+      "name": "n1210_seed1.npz",
+      "sha256": "310132bf07c5b7e582725cb08929fbe5d25113dd7280f7690ded050e2a285844",
+      "size": 978987
+    },
+    {
+      "name": "n1210_seed2.npz",
+      "sha256": "155d86e5a74ad00d59e18bd6f09d0753f816816c0f8e17629a6b8bf0860af325",
+      "size": 979006
+    },
+    {
+      "name": "n125_seed0.npz",
+      "sha256": "8066e0081d14bc1cbfa304b03c28f5ea27d2efd99d083595ca32b73f5520b7af",
+      "size": 96007
+    },
+    {
+      "name": "n125_seed1.npz",
+      "sha256": "5f35f12ccda023af5191e0d7102163a37d0cd77f60ed08b603315bcd7462dcdd",
+      "size": 96000
+    },
+    {
+      "name": "n125_seed2.npz",
+      "sha256": "b595316d4435379157806ed18e6bf081d74084f9aa89a9bf4404dc3738b48fe2",
+      "size": 96000
+    },
+    {
+      "name": "n20000_seed0.npz",
+      "sha256": "c0ab85261cccc9b0138a7630235b7c294b477d632d6984ae126c42a85a42a712",
+      "size": 16681204
+    },
+    {
+      "name": "n20000_seed1.npz",
+      "sha256": "8d99742464b47eebcaca54b178323c9c33e78a73123d6c6487be44b3acd69621",
+      "size": 16680837
+    },
+    {
+      "name": "n20000_seed2.npz",
+      "sha256": "2bfaf1406b21089da5c0040bc4c1f44e6760fcfcb8adb6f67b2cc67bd833c365",
+      "size": 16680803
+    },
+    {
+      "name": "n2420_seed0.npz",
+      "sha256": "816bafb1a493c84b5701d298ecb0f90020e171a6f170bdf2bfae60ac490988da",
+      "size": 1979868
+    },
+    {
+      "name": "n2420_seed1.npz",
+      "sha256": "aa0c49b0cc1728c56e61b6493736be4896169270f9b2f8af016fe568bc8fdaca",
+      "size": 1979724
+    },
+    {
+      "name": "n2420_seed2.npz",
+      "sha256": "cf6c44b2597a96c085303935013c1d16f34ddf3f18379aa01d3c4517957293f8",
+      "size": 1979744
+    },
+    {
+      "name": "n5000_seed0.npz",
+      "sha256": "e4658f0574b7bbeb303aadefdf12e1f3f040303e418611d57cd363700dd76e3f",
+      "size": 4026532
+    },
+    {
+      "name": "n5000_seed1.npz",
+      "sha256": "45a8ae03614661424f5ea8c2f040ab5399cbbf810590d383a948e4a9c92c896e",
+      "size": 4026305
+    },
+    {
+      "name": "n5000_seed2.npz",
+      "sha256": "49e9592d31e8bab17ad50cd7333d4259009b8b5c545a43d407ee684604009ba8",
+      "size": 4026265
+    },
+    {
+      "name": "n610_seed0.npz",
+      "sha256": "10af192281ae86ee92034aac283ec04da00f4252b67710962e3d3f18b88608f8",
+      "size": 484908
+    },
+    {
+      "name": "n610_seed1.npz",
+      "sha256": "bbe898615f924c2426ae818e0e9ebdd2e649409bf7017fc27484bd57c3737bfa",
+      "size": 484953
+    },
+    {
+      "name": "n610_seed2.npz",
+      "sha256": "26fcb65e3a0bd4fa0fee4a902999ce832796eac415b22ba7429c7686bb2c42c6",
+      "size": 484986
+    }
+  ]
+}

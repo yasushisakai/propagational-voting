@@ -1,0 +1,15 @@
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort (import order)
+    "UP",  # pyupgrade (modern syntax)
+    "B",   # flake8-bugbear (common pitfalls)
+]
+
+[tool.ruff.format]
+quote-style = "double"
