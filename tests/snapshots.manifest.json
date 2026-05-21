@@ -1,7 +1,7 @@
 {
   "release_tag": "snapshots-v1",
-  "base_url": "https://github.com/yasushisakai/pypv/releases/download/snapshots-v1",
-  "ppv_git_sha": "d8203eefd06cd241371c99cc95ac0bb6c10aea8c",
+  "base_url": "https://github.com/yasushisakai/propagational-voting/releases/download/snapshots-v1",
+  "ppv_git_sha": "73c8ab1f9761a2b4a289e5b711b34bad31d9c4f8",
   "files": [
     {
       "name": "n10000_seed0.npz",

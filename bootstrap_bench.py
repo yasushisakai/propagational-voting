@@ -51,7 +51,8 @@ CSV_PATH = os.path.join(REPO_ROOT, "benchmark.csv")
 
 RELEASE_TAG = "snapshots-v1"
 RELEASE_BASE_URL = (
-    f"https://github.com/yasushisakai/pypv/releases/download/{RELEASE_TAG}"
+    "https://github.com/yasushisakai/propagational-voting"
+    f"/releases/download/{RELEASE_TAG}"
 )
 
 # Label for the rows this script writes to benchmark.csv. Future implementations
