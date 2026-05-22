@@ -58,7 +58,7 @@ RELEASE_BASE_URL = (
 # Label for the rows this script writes to benchmark.csv. Future implementations
 # (squaring, scipy.sparse, C+Accelerate, Swift+Metal) should use their own
 # label and append to the same CSV so versions can be compared side-by-side.
-VERSION = "squaring"
+VERSION = "sparse-solve"
 
 # (n_delegates, n_intermediates, n_policies, seeds)
 # All cells produce snapshots. "slow" marker on the gatekeeper test is decided

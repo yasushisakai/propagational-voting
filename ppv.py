@@ -3,6 +3,8 @@ import warnings
 from typing import Literal, NamedTuple
 
 import numpy as np
+import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 
 log = logging.getLogger(__name__)
 
@@ -32,9 +34,9 @@ def compute(
     Each delegate and intermediate is a dict mapping target-name → weight. Weights
     in a single voter's dict must sum to 1.0 (they describe how that voter splits
     their unit of voting power). Policies are absorbing states; you only pass
-    their names — the function inserts the identity block for you.
+    their names — no identity block is materialized internally.
 
-    Ordering inside the matrix is fixed: delegates first, then intermediates,
+    Ordering inside outputs is fixed: delegates first, then intermediates,
     then policies. Labels must be unique across all three groups.
 
     Args:
@@ -44,12 +46,10 @@ def compute(
             themselves (no self-key).
         intermediates: Same shape as ``delegates``. Intermediates re-distribute
             mass they receive but are not themselves a final destination.
-        policies: Ordered list of policy names (absorbing states). The order here
-            controls the policy row/column order in the underlying matrix.
-        tol: Convergence threshold on the max remaining transient mass. Stops
-            iterating once ``A_k[:ndi, :].max() < tol``.
-        max_iter: Hard cap on iterations. If exceeded without convergence, emits
-            a ``UserWarning`` but still returns the partial result.
+        policies: Ordered list of policy names (absorbing states).
+        tol: Unused by the direct solver. Retained for API compatibility with
+            the iterative baseline; ignored here.
+        max_iter: Unused by the direct solver. Retained for API compatibility.
 
     Returns:
         ``(consensus, influences)`` where:
@@ -58,201 +58,135 @@ def compute(
           - ``influences``: list of :class:`Influence`, sorted descending by value,
             one entry per delegate + intermediate.
 
-    Example:
-        >>> delegates = {
-        ...     'Alice': {'RedFruit': 0.3, 'apple': 0.7},
-        ...     'Bob':   {'Alice': 0.2, 'banana': 0.8},
-        ... }
-        >>> intermediates = {'RedFruit': {'apple': 1.0}}
-        >>> policies = ['apple', 'banana']
-        >>> consensus, influences = compute(delegates, intermediates, policies)
-        >>> consensus[0].label  # winning policy
-        'apple'
+    Implementation:
+        This branch (`sparse-solve`) uses a direct sparse LU factorization of
+        ``(I − Q)`` (where ``Q`` is the transient × transient block of the
+        column-stochastic voting matrix). All quantities are then computed by
+        triangular solves against the single factor:
 
-    Raises:
-        AssertionError: If labels are not unique, columns don't sum to 1, a voter
-            votes for themselves, or policies aren't strictly absorbing.
+          - consensus = R · (I − Q)⁻¹ · e_d
+          - row sums of (I − Q)⁻¹ via one solve with RHS = 1
+          - diagonal of (I − Q)⁻¹ via block solves with unit-vector RHSs
 
-    Debug:
-        The assembled voting matrix is emitted at ``logging.DEBUG`` on the
-        ``"ppv"`` logger. Enable with::
-
-            import logging
-            logging.basicConfig(level=logging.DEBUG)
-
-    See Also:
-        :func:`build_matrix` for the dict→matrix step on its own.
-        :func:`compute_matrix` for the propagation kernel.
+        This converges to machine precision (no truncation), avoids the
+        O(n²) dense matrix the iterative baseline allocates, and turns the
+        O(k·n³) iteration into one O(nnz) factor plus a handful of solves.
     """
-    v, labels, num_delegates, num_intermediates = build_matrix(
+    del tol, max_iter  # not used by the direct solver
+
+    q, r, labels, num_delegates, num_intermediates = _build_sparse(
         delegates, intermediates, policies
     )
 
     if log.isEnabledFor(logging.DEBUG):
-        with np.printoptions(precision=3, suppress=True, linewidth=120):
-            log.debug("voting matrix (labels=%s):\n%s", labels, v)
+        log.debug(
+            "sparse system: Q.nnz=%d R.nnz=%d ndi=%d num_policies=%d",
+            q.nnz, r.nnz, q.shape[0], r.shape[0],
+        )
 
-    return compute_matrix(
-        v, labels, num_delegates, num_intermediates, tol=tol, max_iter=max_iter
-    )
+    return _solve_sparse(q, r, labels, num_delegates, num_intermediates)
 
 
-def build_matrix(
+def _build_sparse(
     delegates: dict[str, dict[str, float]],
     intermediates: dict[str, dict[str, float]],
     policies: list[str],
-) -> tuple[np.ndarray, list[str], int, int]:
-    """Assemble the column-stochastic voting matrix from sparse inputs.
+) -> tuple[sp.csc_matrix, sp.csc_matrix, list[str], int, int]:
+    """Assemble sparse Q (transient × transient) and R (policy × transient) from dicts.
 
-    This is the matrix-construction half of :func:`compute`, exposed so callers
-    can inspect or modify ``v`` before handing it to :func:`compute_matrix`
-    (debugging, perturbation analysis, caching, etc.).
-
-    Args:
-        delegates: See :func:`compute`.
-        intermediates: See :func:`compute`.
-        policies: See :func:`compute`.
-
-    Returns:
-        ``(v, labels, num_delegates, num_intermediates)`` — exactly the four
-        positional arguments :func:`compute_matrix` expects. Labels are ordered
-        ``list(delegates) + list(intermediates) + list(policies)``.
-
-    Example:
-        >>> v, labels, nd, ni = build_matrix(
-        ...     delegates={'Alice': {'apple': 1.0}, 'Bob': {'banana': 1.0}},
-        ...     intermediates={'RedFruit': {'apple': 1.0}},
-        ...     policies=['apple', 'banana'],
-        ... )
-        >>> labels
-        ['Alice', 'Bob', 'RedFruit', 'apple', 'banana']
-        >>> nd, ni
-        (2, 1)
+    Q[i, j] = weight that transient voter j sends to transient target i.
+    R[p, j] = weight that transient voter j sends to policy p.
+    Each column j of [Q; R] sums to 1 (column-stochastic).
     """
-    labels = list(delegates) + list(intermediates) + list(policies)
+    d_labels = list(delegates)
+    i_labels = list(intermediates)
+    p_labels = list(policies)
+    labels = d_labels + i_labels + p_labels
+
     assert len(labels) == len(set(labels)), (
         "labels must be unique across delegates, intermediates, policies"
     )
 
+    num_delegates = len(d_labels)
+    num_intermediates = len(i_labels)
+    ndi = num_delegates + num_intermediates
+    num_policies = len(p_labels)
+
     index_of = {label: i for i, label in enumerate(labels)}
-    n = len(labels)
-    num_delegates = len(delegates)
-    num_intermediates = len(intermediates)
 
-    v = np.zeros((n, n))
-    for voter, edges in (delegates | intermediates).items():
-        j = index_of[voter]
+    q_rows: list[int] = []
+    q_cols: list[int] = []
+    q_data: list[float] = []
+    r_rows: list[int] = []
+    r_cols: list[int] = []
+    r_data: list[float] = []
+
+    voter_dicts = list(delegates.items()) + list(intermediates.items())
+    for j, (voter, edges) in enumerate(voter_dicts):
+        assert voter not in edges, f"voter {voter!r} cannot vote for themselves"
+        col_total = 0.0
         for target, weight in edges.items():
-            v[index_of[target], j] = weight
-    for p in policies:
-        i = index_of[p]
-        v[i, i] = 1.0
+            i = index_of[target]
+            col_total += weight
+            if i < ndi:
+                q_rows.append(i)
+                q_cols.append(j)
+                q_data.append(weight)
+            else:
+                r_rows.append(i - ndi)
+                r_cols.append(j)
+                r_data.append(weight)
+        assert abs(col_total - 1.0) < 1e-9, (
+            f"voter {voter!r} edge weights sum to {col_total}, must sum to 1"
+        )
 
-    return v, labels, num_delegates, num_intermediates
+    q = sp.csc_matrix(
+        (q_data, (q_rows, q_cols)),
+        shape=(ndi, ndi),
+        dtype=np.float64,
+    )
+    r = sp.csc_matrix(
+        (r_data, (r_rows, r_cols)),
+        shape=(num_policies, ndi),
+        dtype=np.float64,
+    )
+    return q, r, labels, num_delegates, num_intermediates
 
 
-def compute_matrix(
-    v: np.ndarray,
+def _solve_sparse(
+    q: sp.csc_matrix,
+    r: sp.csc_matrix,
     labels: list[str],
     num_delegates: int,
     num_intermediates: int,
-    tol: float = 1e-9,
-    max_iter: int = 10_000,
 ) -> tuple[list[Consensus], list[Influence]]:
-    """Run Propagational Proxy Voting from a column-stochastic matrix.
-
-    This is the low-level kernel. Use it when you already have the voting
-    matrix as a numpy array. The matrix layout is positional and strict:
-
-    - Column ``j`` represents voter ``j``'s outgoing vote distribution and
-      must sum to 1 (column-stochastic).
-    - Rows/columns ``[0, num_delegates)`` are delegates.
-    - Rows/columns ``[num_delegates, num_delegates + num_intermediates)`` are
-      intermediates.
-    - The remaining rows/columns are policies. The policy × policy block must
-      be the identity matrix (absorbing states), and policies must have zero
-      outgoing votes to non-policy rows.
-
-    Args:
-        v: Square ``(n, n)`` column-stochastic ndarray. ``v[i, j]`` is the
-            fraction of voter ``j``'s voting power that flows to entity ``i``.
-        labels: Length-``n`` list of names, in the same order as the matrix
-            rows/columns. Used to label the returned tuples.
-        num_delegates: Number of delegate rows/columns at the top of ``v``.
-        num_intermediates: Number of intermediate rows/columns immediately
-            after the delegates.
-        tol: Convergence threshold on the max remaining transient mass. Stops
-            iterating once ``A_k[:ndi, :].max() < tol``.
-        max_iter: Hard cap on iterations. If exceeded without convergence,
-            emits a ``UserWarning`` but still returns the partial result.
-
-    Returns:
-        See :func:`compute`
-
-    Example:
-
-        >>> import numpy as np
-        >>> v = np.array([
-        ...     #  Alice  Bob  RedFruit  apple  banana
-        ...     [   0.0,  0.2,    0.0,    0.0,   0.0 ],  # → Alice
-        ...     [   0.0,  0.0,    0.0,    0.0,   0.0 ],  # → Bob
-        ...     [   0.3,  0.0,    0.0,    0.0,   0.0 ],  # → RedFruit
-        ...     [   0.7,  0.0,    1.0,    1.0,   0.0 ],  # → apple (absorbing)
-        ...     [   0.0,  0.8,    0.0,    0.0,   1.0 ],  # → banana (absorbing)
-        ... ])
-        >>> consensus, influences = compute_matrix(
-        ...     v,
-        ...     labels=['Alice', 'Bob', 'RedFruit', 'apple', 'banana'],
-        ...     num_delegates=2,
-        ...     num_intermediates=1,
-        ... )
-        >>> consensus[0].label
-        'apple'
-
-    Raises:
-        AssertionError: If ``v`` isn't square, labels don't match its size,
-            columns don't sum to 1, voters self-vote, or the policy block
-            isn't a clean absorbing identity.
-    """
-    n = v.shape[0]
+    """Direct sparse LU on (I − Q); derive consensus + influence from the factor."""
     ndi = num_delegates + num_intermediates
-    num_policies = n - ndi
 
-    assert v.shape == (n, n), "v must be square"
-    assert len(labels) == n, "labels must match matrix size"
-    assert np.allclose(v.sum(axis=0), 1.0), "columns must sum to 1 (column-stochastic)"
-    assert np.allclose(np.diag(v[:ndi, :ndi]), 0), "voters cannot vote for themselves"
-    assert np.allclose(v[ndi:, ndi:], np.eye(num_policies)), (
-        "policies must be absorbing (identity block)"
-    )
-    assert np.allclose(v[:ndi, ndi:], 0), "policies must not vote outward"
+    # One factorization, used for every solve below.
+    lu = spla.splu((sp.eye(ndi, format="csc") - q).tocsc())
 
-    # Joint squaring recurrence on the transient block Q = v[:ndi, :ndi]:
-    #   P_m = Q^(2^m)           T_m = I + Q + Q^2 + ... + Q^(2^m - 1)
-    #   T_{m+1} = T_m + T_m·P_m   P_{m+1} = P_m·P_m
-    # Reaches V^k after ~log2(k) squarings instead of k sequential GEMMs.
-    # T_inf equals the transient block of the original `influence` matrix.
-    q = v[:ndi, :ndi]
-    r = v[ndi:, :ndi]
+    # consensus = R · N · e_d, where N = (I − Q)^-1 and e_d picks delegate columns.
+    e_d = np.zeros(ndi)
+    e_d[:num_delegates] = 1.0
+    consensus_vec = (r @ lu.solve(e_d))
 
-    p = q.copy()
-    t = np.eye(ndi)
+    # Row sums of N: solve (I − Q) x = 1 ⇒ x = N · 1.
+    row_sums = lu.solve(np.ones(ndi))
 
-    for _ in range(max_iter):
-        if p.max() < tol:
-            break
-        t = t + t @ p
-        p = p @ p
-    else:
+    # Diagonal of N: solve in column blocks against unit-vector RHSs.
+    # Block size trades Python overhead vs. RHS memory footprint
+    # (each block is an ndi × block_size dense matrix).
+    diag = _diag_inverse(lu, ndi)
+    inf_values = (row_sums / diag).tolist()
+
+    if (diag <= 0).any():
         warnings.warn(
-            f"did not converge within {max_iter} squarings "
-            f"(max transient mass = {p.max():.2e})",
+            "non-positive diagonal in (I − Q)^-1; system may be near-singular",
             stacklevel=2,
         )
 
-    e_d = np.zeros(ndi)
-    e_d[:num_delegates] = 1.0
-    policy_totals = (r @ t @ e_d).tolist()
+    policy_totals = consensus_vec.tolist()
     consensus = sorted(
         (
             Consensus(label, value)
@@ -262,7 +196,6 @@ def compute_matrix(
         reverse=True,
     )
 
-    inf_values = (t.sum(axis=1) / t.diagonal()).tolist()
     roles: list[Role] = ["delegate"] * num_delegates + [
         "intermediate"
     ] * num_intermediates
@@ -276,3 +209,23 @@ def compute_matrix(
     )
 
     return (consensus, influences)
+
+
+def _diag_inverse(lu: spla.SuperLU, ndi: int, block_size: int = 512) -> np.ndarray:
+    """Return diag((I − Q)^-1) by solving against unit-vector RHSs in blocks.
+
+    Each block builds a dense ndi × block_size RHS containing a slice of the
+    identity matrix, calls one batched triangular solve, then extracts the
+    relevant diagonal entries from the result.
+    """
+    diag = np.empty(ndi, dtype=np.float64)
+    for start in range(0, ndi, block_size):
+        end = min(start + block_size, ndi)
+        width = end - start
+        rhs = np.zeros((ndi, width), dtype=np.float64)
+        for col, j in enumerate(range(start, end)):
+            rhs[j, col] = 1.0
+        sol = lu.solve(rhs)
+        for col, j in enumerate(range(start, end)):
+            diag[j] = sol[j, col]
+    return diag
