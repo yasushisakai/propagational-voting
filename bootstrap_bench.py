@@ -58,7 +58,7 @@ RELEASE_BASE_URL = (
 # Label for the rows this script writes to benchmark.csv. Future implementations
 # (squaring, scipy.sparse, C+Accelerate, Swift+Metal) should use their own
 # label and append to the same CSV so versions can be compared side-by-side.
-VERSION = "squaring_fp32"
+VERSION = "mlx_squaring"
 
 # (n_delegates, n_intermediates, n_policies, seeds)
 # All cells produce snapshots. "slow" marker on the gatekeeper test is decided
@@ -70,7 +70,7 @@ CELLS: list[tuple[int, int, int, list[int]]] = [
     (2000,  400,  20,  [0, 1, 2]),  # n_tot= 2420, ~100s/seed
     (4000,  900,  100, [0, 1, 2]),  # n_tot= 5000, ~5.5min/seed (observed)
     (8000,  1800, 200, [0, 1, 2]),  # n_tot=10000, ~40min/seed (observed)
-    (16000, 3600, 400, [0, 1, 2]),  # n_tot=20000, ~3.8h/seed (estimated)
+    # (16000, 3600, 400, [0, 1, 2]),  # n_tot=20000 — MLX hits macOS GPU TDR watchdog
 ]
 DELEGATE_OUT = 100
 INTERMEDIATE_OUT = 10
