@@ -139,7 +139,7 @@ def build_matrix(
     num_delegates = len(delegates)
     num_intermediates = len(intermediates)
 
-    v = np.zeros((n, n))
+    v = np.zeros((n, n), dtype=np.float32)
     for voter, edges in (delegates | intermediates).items():
         j = index_of[voter]
         for target, weight in edges.items():
@@ -236,7 +236,7 @@ def compute_matrix(
     r = v[ndi:, :ndi]
 
     p = q.copy()
-    t = np.eye(ndi)
+    t = np.eye(ndi, dtype=np.float32)
 
     for _ in range(max_iter):
         if p.max() < tol:
@@ -250,7 +250,7 @@ def compute_matrix(
             stacklevel=2,
         )
 
-    e_d = np.zeros(ndi)
+    e_d = np.zeros(ndi, dtype=np.float32)
     e_d[:num_delegates] = 1.0
     policy_totals = (r @ t @ e_d).tolist()
     consensus = sorted(

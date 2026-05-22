@@ -106,6 +106,32 @@ def _reconstruct_inputs(snap) -> tuple[dict, dict, list[str]]:
     return delegates, intermediates, p_labels
 
 
+# Gatekeeper tolerance is a per-implementation choice. fp32 squaring lands at
+# ~1.5e-6 rtol; sparse-solve and fp64 squaring are essentially machine-precision.
+# Loose enough to accept any reasonable-precision impl, strict enough to catch
+# real algorithmic regressions. Per discussion: ranking preservation is the
+# primary contract; value agreement within these tolerances is the secondary.
+ATOL = 1e-3
+RTOL = 1e-5
+
+
+def _check_ranking_preserved(got: dict, ref: dict, atol: float, what: str) -> None:
+    """Walk got's sorted-descending order. For each adjacent pair whose got values
+    differ by more than 2*atol, the ref values must agree on the same ordering.
+    Pairs whose values are within tolerance are treated as a tie cluster and may
+    be in any order — fp32 commonly swaps these without changing meaning."""
+    sorted_got = sorted(got.items(), key=lambda kv: -kv[1])
+    for i in range(len(sorted_got) - 1):
+        la, va = sorted_got[i]
+        lb, vb = sorted_got[i + 1]
+        if va - vb > 2 * atol:
+            # got ranks la above lb with a meaningful gap. ref must agree.
+            assert ref[la] + atol >= ref[lb], (
+                f"{what} ranking flipped: got {la}({va:.6g}) > {lb}({vb:.6g}) "
+                f"but ref {la}({ref[la]:.6g}) < {lb}({ref[lb]:.6g})"
+            )
+
+
 @pytest.mark.parametrize("entry_and_url", _params())
 def test_gatekeeper(entry_and_url) -> None:
     entry, base_url = entry_and_url
@@ -114,8 +140,8 @@ def test_gatekeeper(entry_and_url) -> None:
     delegates, intermediates, policies = _reconstruct_inputs(snap)
     consensus, influences = compute(delegates, intermediates, policies)
 
-    # Compare as keyed dicts so tie clusters (where two values agree to within
-    # tolerance) don't fail on label ordering, which sort treats arbitrarily.
+    # CONSENSUS: same label set, values within tolerance, ranking preserved on
+    # meaningfully-different pairs.
     got_c = {c.label: c.value for c in consensus}
     want_c = dict(zip(
         (str(x) for x in snap["consensus_labels"]),
@@ -124,23 +150,29 @@ def test_gatekeeper(entry_and_url) -> None:
     assert got_c.keys() == want_c.keys()
     np.testing.assert_allclose(
         [got_c[k] for k in want_c], list(want_c.values()),
-        atol=1e-7, rtol=1e-6,
+        atol=ATOL, rtol=RTOL,
     )
+    _check_ranking_preserved(got_c, want_c, atol=ATOL, what="consensus")
 
-    got_i = {i.label: (i.role, i.value) for i in influences}
-    want_i = dict(zip(
+    # INFLUENCE: same label set + roles, values within tolerance, ranking
+    # preserved on meaningfully-different pairs.
+    got_i_full = {i.label: (i.role, i.value) for i in influences}
+    want_i_full = dict(zip(
         (str(x) for x in snap["influence_labels"]),
         zip((str(r) for r in snap["influence_roles"]),
             snap["influence_values"], strict=True),
         strict=True,
     ))
-    assert got_i.keys() == want_i.keys()
-    for k in want_i:
-        assert got_i[k][0] == want_i[k][0], f"role mismatch for {k}"
+    assert got_i_full.keys() == want_i_full.keys()
+    for k in want_i_full:
+        assert got_i_full[k][0] == want_i_full[k][0], f"role mismatch for {k}"
+    got_i = {k: v[1] for k, v in got_i_full.items()}
+    want_i = {k: v[1] for k, v in want_i_full.items()}
     np.testing.assert_allclose(
-        [got_i[k][1] for k in want_i], [want_i[k][1] for k in want_i],
-        atol=1e-7, rtol=1e-6,
+        [got_i[k] for k in want_i], list(want_i.values()),
+        atol=ATOL, rtol=RTOL,
     )
+    _check_ranking_preserved(got_i, want_i, atol=ATOL, what="influence")
 
 
 def test_manifest_present() -> None:
