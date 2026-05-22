@@ -227,22 +227,32 @@ def compute_matrix(
     )
     assert np.allclose(v[:ndi, ndi:], 0), "policies must not vote outward"
 
-    a = np.eye(n)
-    influence = a.copy()
+    # Joint squaring recurrence on the transient block Q = v[:ndi, :ndi]:
+    #   P_m = Q^(2^m)           T_m = I + Q + Q^2 + ... + Q^(2^m - 1)
+    #   T_{m+1} = T_m + T_m·P_m   P_{m+1} = P_m·P_m
+    # Reaches V^k after ~log2(k) squarings instead of k sequential GEMMs.
+    # T_inf equals the transient block of the original `influence` matrix.
+    q = v[:ndi, :ndi]
+    r = v[ndi:, :ndi]
+
+    p = q.copy()
+    t = np.eye(ndi)
 
     for _ in range(max_iter):
-        a = a @ v
-        influence += a
-        if a[:ndi, :].max() < tol:
+        if p.max() < tol:
             break
+        t = t + t @ p
+        p = p @ p
     else:
         warnings.warn(
-            f"did not converge within {max_iter} iterations "
-            f"(max transient mass = {a[:ndi, :].max():.2e})",
+            f"did not converge within {max_iter} squarings "
+            f"(max transient mass = {p.max():.2e})",
             stacklevel=2,
         )
 
-    policy_totals = a[ndi:, :num_delegates].sum(axis=1).tolist()
+    e_d = np.zeros(ndi)
+    e_d[:num_delegates] = 1.0
+    policy_totals = (r @ t @ e_d).tolist()
     consensus = sorted(
         (
             Consensus(label, value)
@@ -252,8 +262,7 @@ def compute_matrix(
         reverse=True,
     )
 
-    block = influence[:ndi, :ndi]
-    inf_values = (block.sum(axis=1) / block.diagonal()).tolist()
+    inf_values = (t.sum(axis=1) / t.diagonal()).tolist()
     roles: list[Role] = ["delegate"] * num_delegates + [
         "intermediate"
     ] * num_intermediates

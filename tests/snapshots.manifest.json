@@ -1,112 +1,112 @@
 {
-  "release_tag": "snapshots-v1",
-  "base_url": "https://github.com/yasushisakai/propagational-voting/releases/download/snapshots-v1",
-  "ppv_git_sha": "73c8ab1f9761a2b4a289e5b711b34bad31d9c4f8",
+  "release_tag": "snapshots-v2",
+  "base_url": "https://github.com/yasushisakai/propagational-voting/releases/download/snapshots-v2",
+  "ppv_git_sha": "465c77bf59c3783b6da9cefd12eca8f6314a81e7",
   "files": [
     {
       "name": "n10000_seed0.npz",
-      "sha256": "894c53fba77c59a43f81b6b8de01374c77ee428d2deda43666ca610dfb4b8611",
-      "size": 8197407
+      "sha256": "c24fa9ad4d12d408058050436509fdcbcd9b8a089a7b2647705dd55695ef4462",
+      "size": 8197401
     },
     {
       "name": "n10000_seed1.npz",
-      "sha256": "189cf1d9ed350268496710a33f89c5584b2b01ddfa18fcc2779e200749bec2de",
-      "size": 8196890
+      "sha256": "a0f92f068b80d16b0b0c0c60de8ff8ac6410756f51d1a12a32381e311be9f5ef",
+      "size": 8196874
     },
     {
       "name": "n10000_seed2.npz",
-      "sha256": "74e21f9dde3d78187ac60c1732be3dac0e2fdc0ba1fd2aa2447e73946c870728",
-      "size": 8197124
+      "sha256": "0e4cbc679f9ff4d60cbe1da4a654b94e41926dc38f1c1dc6259259353468e3a4",
+      "size": 8197085
     },
     {
       "name": "n1210_seed0.npz",
-      "sha256": "a4042e3524c46980eac8f0b773ff1213742c5bc882646b1c2649bbc24b8dcbaf",
+      "sha256": "9b4436169b4267e32e45b2ec6985fc8b3dcdb002616a0fcd25b0346c3c254521",
       "size": 978961
     },
     {
       "name": "n1210_seed1.npz",
-      "sha256": "310132bf07c5b7e582725cb08929fbe5d25113dd7280f7690ded050e2a285844",
-      "size": 978987
+      "sha256": "08e624fd2160083f25d46a94f0ed3de2e8ca5bd0ed0e0515c06f4c80544d20ba",
+      "size": 978974
     },
     {
       "name": "n1210_seed2.npz",
-      "sha256": "155d86e5a74ad00d59e18bd6f09d0753f816816c0f8e17629a6b8bf0860af325",
-      "size": 979006
+      "sha256": "b6a9ef1d7726a5bb9f86cf7f0487979fa68b3898c76a65250ce7d1a4d996700d",
+      "size": 979011
     },
     {
       "name": "n125_seed0.npz",
-      "sha256": "8066e0081d14bc1cbfa304b03c28f5ea27d2efd99d083595ca32b73f5520b7af",
-      "size": 96007
+      "sha256": "4918591f8612e35e0a52370dbbfab7c75491ebc7abee948576b6c6f379a55dea",
+      "size": 96010
     },
     {
       "name": "n125_seed1.npz",
-      "sha256": "5f35f12ccda023af5191e0d7102163a37d0cd77f60ed08b603315bcd7462dcdd",
-      "size": 96000
+      "sha256": "aca36bbc8b014cf515e284ef8c23fdedb81f21276c4ecb7d8953e308dd58328f",
+      "size": 95994
     },
     {
       "name": "n125_seed2.npz",
-      "sha256": "b595316d4435379157806ed18e6bf081d74084f9aa89a9bf4404dc3738b48fe2",
-      "size": 96000
+      "sha256": "344f47d45bc13906f7d233ed796785fd3c8c00514d6bf994f6cc97bf0d9cc2d7",
+      "size": 95993
     },
     {
       "name": "n20000_seed0.npz",
-      "sha256": "c0ab85261cccc9b0138a7630235b7c294b477d632d6984ae126c42a85a42a712",
-      "size": 16681204
+      "sha256": "dcd5a57893c286729c27dd8ec9efa386edf0158dbcc332e141516dee3fbf4094",
+      "size": 16681183
     },
     {
       "name": "n20000_seed1.npz",
-      "sha256": "8d99742464b47eebcaca54b178323c9c33e78a73123d6c6487be44b3acd69621",
-      "size": 16680837
+      "sha256": "3150a076aed03e2e635908da0065b868f2db347d3c1dc4f86130545cc4ba9f3e",
+      "size": 16680908
     },
     {
       "name": "n20000_seed2.npz",
-      "sha256": "2bfaf1406b21089da5c0040bc4c1f44e6760fcfcb8adb6f67b2cc67bd833c365",
-      "size": 16680803
+      "sha256": "e50b4f0492f1047ac949f3588e784440494140a6a5a799f4eae9faa7957d1b24",
+      "size": 16680779
     },
     {
       "name": "n2420_seed0.npz",
-      "sha256": "816bafb1a493c84b5701d298ecb0f90020e171a6f170bdf2bfae60ac490988da",
-      "size": 1979868
+      "sha256": "6fe9980134a7eea207c965a53b17b48f223376b765c9818a5fb29f3c4b44df97",
+      "size": 1979866
     },
     {
       "name": "n2420_seed1.npz",
-      "sha256": "aa0c49b0cc1728c56e61b6493736be4896169270f9b2f8af016fe568bc8fdaca",
-      "size": 1979724
+      "sha256": "dad8c151df67edbfb347851dd8f574c2ad96d0dbcf80de9fa88787f3fd281d54",
+      "size": 1979721
     },
     {
       "name": "n2420_seed2.npz",
-      "sha256": "cf6c44b2597a96c085303935013c1d16f34ddf3f18379aa01d3c4517957293f8",
-      "size": 1979744
+      "sha256": "c457e393075a466e1021d9036bbf5115378fe8692cb6a5e080c716b19379d753",
+      "size": 1979729
     },
     {
       "name": "n5000_seed0.npz",
-      "sha256": "e4658f0574b7bbeb303aadefdf12e1f3f040303e418611d57cd363700dd76e3f",
-      "size": 4026532
+      "sha256": "f73e74e7050fcd88698b38aa09b891dc1e28b5fc5731b5397f4881fd2962df26",
+      "size": 4026521
     },
     {
       "name": "n5000_seed1.npz",
-      "sha256": "45a8ae03614661424f5ea8c2f040ab5399cbbf810590d383a948e4a9c92c896e",
-      "size": 4026305
+      "sha256": "1e4e56e85ced7fbe4af9f11739d842b722e0e83556fc137a7223dbe11590874e",
+      "size": 4026297
     },
     {
       "name": "n5000_seed2.npz",
-      "sha256": "49e9592d31e8bab17ad50cd7333d4259009b8b5c545a43d407ee684604009ba8",
-      "size": 4026265
+      "sha256": "745f1fed6fd3048d6b64acaaddcaca058e60d818e67d7ee796ef232074a6d1a2",
+      "size": 4026255
     },
     {
       "name": "n610_seed0.npz",
-      "sha256": "10af192281ae86ee92034aac283ec04da00f4252b67710962e3d3f18b88608f8",
-      "size": 484908
+      "sha256": "61110d5fa9795e82e48c17250792cc6f9117959c3f9b394525408c4eae56acba",
+      "size": 484903
     },
     {
       "name": "n610_seed1.npz",
-      "sha256": "bbe898615f924c2426ae818e0e9ebdd2e649409bf7017fc27484bd57c3737bfa",
-      "size": 484953
+      "sha256": "1bcf1bb605c54fb7e31ce46a0db66689b3f6e375cd87269123b9d16dd69fd49b",
+      "size": 484943
     },
     {
       "name": "n610_seed2.npz",
-      "sha256": "26fcb65e3a0bd4fa0fee4a902999ce832796eac415b22ba7429c7686bb2c42c6",
-      "size": 484986
+      "sha256": "01c804e6ee5a97689404dbf4bee660b1a1b53c81a588cf38ba7efbc703f91408",
+      "size": 484974
     }
   ]
 }

@@ -49,7 +49,7 @@ SNAPSHOT_DIR = os.path.join(REPO_ROOT, "tests", "snapshots")
 MANIFEST_PATH = os.path.join(REPO_ROOT, "tests", "snapshots.manifest.json")
 CSV_PATH = os.path.join(REPO_ROOT, "benchmark.csv")
 
-RELEASE_TAG = "snapshots-v1"
+RELEASE_TAG = "snapshots-v2"
 RELEASE_BASE_URL = (
     "https://github.com/yasushisakai/propagational-voting"
     f"/releases/download/{RELEASE_TAG}"
@@ -58,7 +58,7 @@ RELEASE_BASE_URL = (
 # Label for the rows this script writes to benchmark.csv. Future implementations
 # (squaring, scipy.sparse, C+Accelerate, Swift+Metal) should use their own
 # label and append to the same CSV so versions can be compared side-by-side.
-VERSION = "baseline"
+VERSION = "squaring"
 
 # (n_delegates, n_intermediates, n_policies, seeds)
 # All cells produce snapshots. "slow" marker on the gatekeeper test is decided
@@ -246,10 +246,14 @@ def main() -> None:
             consensus, influences = compute(delegates, intermediates, policies)
             wall = time.perf_counter() - t0
             rss = peak_rss_mb()
-            save_snapshot(
-                snap_path, delegates, intermediates, policies,
-                consensus, influences, seed, sha,
-            )
+            # Only the canonical (baseline) snapshot is saved. Other versions
+            # benchmark against the same inputs but must not overwrite reference
+            # outputs — the gatekeeper test relies on baseline's snapshot bytes.
+            if not os.path.exists(snap_path):
+                save_snapshot(
+                    snap_path, delegates, intermediates, policies,
+                    consensus, influences, seed, sha,
+                )
             print(f"{n_d:>6} {n_i:>6} {n_p:>6} {n_total:>7} {seed:>4} "
                   f"{wall:>10.3f} {rss:>8.1f}  computed",
                   flush=True)

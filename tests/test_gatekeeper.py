@@ -114,16 +114,31 @@ def test_gatekeeper(entry_and_url) -> None:
     delegates, intermediates, policies = _reconstruct_inputs(snap)
     consensus, influences = compute(delegates, intermediates, policies)
 
-    assert [c.label for c in consensus] == [str(x) for x in snap["consensus_labels"]]
+    # Compare as keyed dicts so tie clusters (where two values agree to within
+    # tolerance) don't fail on label ordering, which sort treats arbitrarily.
+    got_c = {c.label: c.value for c in consensus}
+    want_c = dict(zip(
+        (str(x) for x in snap["consensus_labels"]),
+        snap["consensus_values"], strict=True,
+    ))
+    assert got_c.keys() == want_c.keys()
     np.testing.assert_allclose(
-        [c.value for c in consensus], snap["consensus_values"],
+        [got_c[k] for k in want_c], list(want_c.values()),
         atol=1e-7, rtol=1e-6,
     )
 
-    assert [i.label for i in influences] == [str(x) for x in snap["influence_labels"]]
-    assert [i.role for i in influences] == [str(x) for x in snap["influence_roles"]]
+    got_i = {i.label: (i.role, i.value) for i in influences}
+    want_i = dict(zip(
+        (str(x) for x in snap["influence_labels"]),
+        zip((str(r) for r in snap["influence_roles"]),
+            snap["influence_values"], strict=True),
+        strict=True,
+    ))
+    assert got_i.keys() == want_i.keys()
+    for k in want_i:
+        assert got_i[k][0] == want_i[k][0], f"role mismatch for {k}"
     np.testing.assert_allclose(
-        [i.value for i in influences], snap["influence_values"],
+        [got_i[k][1] for k in want_i], [want_i[k][1] for k in want_i],
         atol=1e-7, rtol=1e-6,
     )
 
