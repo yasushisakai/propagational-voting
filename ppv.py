@@ -24,21 +24,23 @@ cublas.setMathMode(
 # fp32 tail for ordering parity.
 _SWITCH_THRESH = 0.0
 _ALPHA_FP32 = np.array(1.0, dtype=np.float32)
-_BETA_FP32 = np.array(0.0, dtype=np.float32)
+_BETA0_FP32 = np.array(0.0, dtype=np.float32)
+_BETA1_FP32 = np.array(1.0, dtype=np.float32)
 
 
-def _gemm_fp16(a: cp.ndarray, b: cp.ndarray) -> cp.ndarray:
-    """Square fp32 row-major C = A @ B via fp16 tensor-core GEMM with fp32 accum.
+def _gemm_acc(
+    a_h: cp.ndarray, b_h: cp.ndarray, c: cp.ndarray, *, accumulate: bool
+) -> None:
+    """C = A @ B + (accumulate ? C : 0), with fp16 inputs and fp32 accumulator.
 
-    Inputs and output are fp32 cupy arrays; A and B are cast to fp16 just for
-    the multiply. cuBLAS sees column-major, so we issue gemm(B, A) — the
-    standard row-major-to-column-major swap. Restricted to square (n×n)
-    inputs since that's all the squaring kernel needs.
+    Square (n×n) only — that's all the squaring kernel needs. Inputs `a_h`,
+    `b_h` are already fp16; `c` is a pre-allocated fp32 buffer that's either
+    overwritten or accumulated into. Dispatches to cuBLAS HMMA tensor cores
+    via gemmEx. cuBLAS is column-major; swapping operand order is the standard
+    row-major adapter.
     """
-    n = a.shape[0]
-    a_h = a.astype(cp.float16)
-    b_h = b.astype(cp.float16)
-    c = cp.empty((n, n), dtype=cp.float32)
+    n = c.shape[0]
+    beta = _BETA1_FP32 if accumulate else _BETA0_FP32
     handle = cp.cuda.Device().cublas_handle
     cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
     cublas.gemmEx(
@@ -48,12 +50,11 @@ def _gemm_fp16(a: cp.ndarray, b: cp.ndarray) -> cp.ndarray:
         _ALPHA_FP32.ctypes.data,
         b_h.data.ptr, runtime.CUDA_R_16F, n,
         a_h.data.ptr, runtime.CUDA_R_16F, n,
-        _BETA_FP32.ctypes.data,
+        beta.ctypes.data,
         c.data.ptr, runtime.CUDA_R_32F, n,
         cublas.CUBLAS_COMPUTE_32F,
         cublas.CUBLAS_GEMM_DEFAULT_TENSOR_OP,
     )
-    return c
 
 Role = Literal["delegate", "intermediate"]
 
@@ -292,13 +293,22 @@ def compute_matrix(
     # large enough to survive the fp16 cast; TF32 below the threshold so the
     # tail iterations (which set the final ordering of low-mass policies)
     # don't lose precision.
+    #
+    # fp16 path is tightened vs the naive version: P is cast once per iter and
+    # reused across both GEMMs, and T += T·P is fused into a single gemmEx
+    # call with beta=1 (saving the separate elementwise add and one fp32
+    # buffer pass over T).
+    p_new = cp.empty((ndi, ndi), dtype=cp.float32)
     for _ in range(max_iter):
         p_max = float(p.max())
         if p_max < tol:
             break
         if p_max > _SWITCH_THRESH:
-            t = t + _gemm_fp16(t, p)
-            p = _gemm_fp16(p, p)
+            p_h = p.astype(cp.float16)
+            t_h = t.astype(cp.float16)
+            _gemm_acc(t_h, p_h, t, accumulate=True)
+            _gemm_acc(p_h, p_h, p_new, accumulate=False)
+            p, p_new = p_new, p
         else:
             t = t + t @ p
             p = p @ p
@@ -311,7 +321,9 @@ def compute_matrix(
 
     e_d = cp.zeros(ndi, dtype=cp.float32)
     e_d[:num_delegates] = 1.0
-    policy_totals = cp.asnumpy(r @ t @ e_d).tolist()
+    # Reduce right-to-left so the intermediate is a vector (ndi,) rather than
+    # the (num_policies, ndi) matrix r·t — saves an n×n GEMM at the end.
+    policy_totals = cp.asnumpy(r @ (t @ e_d)).tolist()
     consensus = sorted(
         (
             Consensus(label, value)
