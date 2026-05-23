@@ -59,7 +59,7 @@ RELEASE_BASE_URL = (
 # Label for the rows this script writes to benchmark.csv. Future implementations
 # (squaring, scipy.sparse, C+Accelerate, Swift+Metal) should use their own
 # label and append to the same CSV so versions can be compared side-by-side.
-VERSION = "cupy"
+VERSION = "cupy_fp16"
 
 # Hardware tag stored alongside each row. Wall-times only compare within the
 # same (version, hardware) pair. Override on branches that target accelerators

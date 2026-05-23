@@ -4,18 +4,56 @@ from typing import Literal, NamedTuple
 
 import cupy as cp
 import numpy as np
-from cupy.cuda import cublas
+from cupy.cuda import cublas, runtime
 
 log = logging.getLogger(__name__)
 
-# Enable TF32 on the default device's cuBLAS handle. On Ampere+ (incl. Ada)
-# this makes sgemm dispatch to TF32 tensor cores: ~10-bit mantissa inputs,
-# fp32 accumulation. Error stays within what squaring_fp32 already exhibits;
-# rankings are preserved per check_cuda_error.py.
+# TF32 on the default device's cuBLAS handle. Used as the fallback (high-
+# precision) path inside the squaring loop once P.max() drops below
+# _SWITCH_THRESH and fp16 inputs would start shedding meaningful bits.
 cublas.setMathMode(
     cp.cuda.Device().cublas_handle,
     cublas.CUBLAS_TENSOR_OP_MATH,
 )
+
+# Below this P.max(), switch from fp16 GEMM to fp32 (TF32) GEMM. 0 means
+# always run fp16 — that's what check_ordering.py validated against the
+# fp64 reference: the only inversions are pairs whose reference values are
+# within atol=rtol=1e-3 (tie swaps), identical to what the cupy branch
+# already produces with TF32. Bump up if a future input class needs an
+# fp32 tail for ordering parity.
+_SWITCH_THRESH = 0.0
+_ALPHA_FP32 = np.array(1.0, dtype=np.float32)
+_BETA_FP32 = np.array(0.0, dtype=np.float32)
+
+
+def _gemm_fp16(a: cp.ndarray, b: cp.ndarray) -> cp.ndarray:
+    """Square fp32 row-major C = A @ B via fp16 tensor-core GEMM with fp32 accum.
+
+    Inputs and output are fp32 cupy arrays; A and B are cast to fp16 just for
+    the multiply. cuBLAS sees column-major, so we issue gemm(B, A) — the
+    standard row-major-to-column-major swap. Restricted to square (n×n)
+    inputs since that's all the squaring kernel needs.
+    """
+    n = a.shape[0]
+    a_h = a.astype(cp.float16)
+    b_h = b.astype(cp.float16)
+    c = cp.empty((n, n), dtype=cp.float32)
+    handle = cp.cuda.Device().cublas_handle
+    cublas.setPointerMode(handle, cublas.CUBLAS_POINTER_MODE_HOST)
+    cublas.gemmEx(
+        handle,
+        cublas.CUBLAS_OP_N, cublas.CUBLAS_OP_N,
+        n, n, n,
+        _ALPHA_FP32.ctypes.data,
+        b_h.data.ptr, runtime.CUDA_R_16F, n,
+        a_h.data.ptr, runtime.CUDA_R_16F, n,
+        _BETA_FP32.ctypes.data,
+        c.data.ptr, runtime.CUDA_R_32F, n,
+        cublas.CUBLAS_COMPUTE_32F,
+        cublas.CUBLAS_GEMM_DEFAULT_TENSOR_OP,
+    )
+    return c
 
 Role = Literal["delegate", "intermediate"]
 
@@ -250,11 +288,20 @@ def compute_matrix(
     p = q.copy()
     t = cp.eye(ndi, dtype=cp.float32)
 
+    # Adaptive precision: fp16 tensor-core GEMM while P entries are still
+    # large enough to survive the fp16 cast; TF32 below the threshold so the
+    # tail iterations (which set the final ordering of low-mass policies)
+    # don't lose precision.
     for _ in range(max_iter):
-        if float(p.max()) < tol:
+        p_max = float(p.max())
+        if p_max < tol:
             break
-        t = t + t @ p
-        p = p @ p
+        if p_max > _SWITCH_THRESH:
+            t = t + _gemm_fp16(t, p)
+            p = _gemm_fp16(p, p)
+        else:
+            t = t + t @ p
+            p = p @ p
     else:
         warnings.warn(
             f"did not converge within {max_iter} squarings "
