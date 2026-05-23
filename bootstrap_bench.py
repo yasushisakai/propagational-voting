@@ -35,6 +35,7 @@ import csv
 import hashlib
 import json
 import os
+import platform
 import resource
 import subprocess
 import sys
@@ -59,6 +60,11 @@ RELEASE_BASE_URL = (
 # (squaring, scipy.sparse, C+Accelerate, Swift+Metal) should use their own
 # label and append to the same CSV so versions can be compared side-by-side.
 VERSION = "squaring_fp32"
+
+# Hardware tag stored alongside each row. Wall-times only compare within the
+# same (version, hardware) pair. Override on branches that target accelerators
+# (e.g. "RTX 6000 Ada").
+HARDWARE = "M1 Max"
 
 # (n_delegates, n_intermediates, n_policies, seeds)
 # All cells produce snapshots. "slow" marker on the gatekeeper test is decided
@@ -158,25 +164,30 @@ def save_snapshot(
 
 
 def peak_rss_mb() -> float:
-    # macOS: ru_maxrss is in bytes. Linux: KB. We target Darwin.
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024 * 1024)
+    # macOS reports ru_maxrss in bytes; Linux reports KB.
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if platform.system() == "Darwin":
+        return rss / (1024 * 1024)
+    return rss / 1024
 
 
 def load_existing_csv() -> tuple[dict[tuple, dict], list[dict]]:
-    """Return ({(n_d, n_i, n_p, seed): row_for_our_VERSION}, all_rows_passthrough).
+    """Return ({(n_d, n_i, n_p, seed): row_for_our_(VERSION, HARDWARE)}, all_rows_passthrough).
 
-    Rows from other VERSIONs are passed through unchanged so this script doesn't
-    clobber timings recorded by future implementations. Pre-versioning rows (no
-    'version' column) are treated as belonging to VERSION."""
+    Rows from other (VERSION, HARDWARE) pairs pass through unchanged so this
+    script doesn't clobber timings recorded by other implementations or other
+    machines. Pre-schema rows missing 'version' or 'hardware' are migrated to
+    the current values on read so they don't get treated as a separate cell."""
     by_key: dict[tuple, dict] = {}
     all_rows: list[dict] = []
     if not os.path.exists(CSV_PATH):
         return by_key, all_rows
     with open(CSV_PATH) as f:
         for row in csv.DictReader(f):
-            row.setdefault("version", VERSION)  # migrate pre-versioning rows
+            row.setdefault("version", VERSION)
+            row.setdefault("hardware", HARDWARE)
             all_rows.append(row)
-            if row["version"] == VERSION:
+            if row["version"] == VERSION and row["hardware"] == HARDWARE:
                 key = (int(row["n_d"]), int(row["n_i"]),
                        int(row["n_p"]), int(row["seed"]))
                 by_key[key] = row
@@ -221,8 +232,11 @@ def main() -> None:
     # Warm-up: prime numpy / dyld so the first real cell isn't penalized.
     _ = compute(*make_inputs(5, 2, 2, seed=999))
 
-    # Carry forward rows belonging to other VERSIONs unchanged.
-    rows: list[dict] = [r for r in passthrough if r["version"] != VERSION]
+    # Carry forward rows from other (VERSION, HARDWARE) pairs unchanged.
+    rows: list[dict] = [
+        r for r in passthrough
+        if (r["version"], r["hardware"]) != (VERSION, HARDWARE)
+    ]
 
     print(f"{'n_d':>6} {'n_i':>6} {'n_p':>6} {'n_tot':>7} {'seed':>4} "
           f"{'wall_s':>10} {'rss_mb':>8}  status", flush=True)
@@ -258,7 +272,7 @@ def main() -> None:
                   f"{wall:>10.3f} {rss:>8.1f}  computed",
                   flush=True)
             rows.append({
-                "version": VERSION,
+                "version": VERSION, "hardware": HARDWARE,
                 "n_d": n_d, "n_i": n_i, "n_p": n_p, "n_total": n_total,
                 "seed": seed, "wall_seconds": f"{wall:.4f}",
                 "peak_rss_mb": f"{rss:.2f}", "ppv_git_sha": sha,
@@ -266,11 +280,11 @@ def main() -> None:
 
     # Write CSV
     rows.sort(key=lambda r: (
-        r["version"], int(r["n_total"]), int(r["seed"])
+        r["version"], r["hardware"], int(r["n_total"]), int(r["seed"])
     ))
     with open(CSV_PATH, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=[
-            "version", "n_d", "n_i", "n_p", "n_total", "seed",
+            "version", "hardware", "n_d", "n_i", "n_p", "n_total", "seed",
             "wall_seconds", "peak_rss_mb", "ppv_git_sha",
         ])
         w.writeheader()

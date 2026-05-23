@@ -10,7 +10,9 @@ See `examples/basic.py` and `help(ppv.compute)`.
 
 ## Benchmarking
 
-`benchmark.csv` records `(version, cell, seed) → wall, RSS`. `tests/snapshots.manifest.json` lists the input/output bundles (hosted as a [GitHub release](https://github.com/yasushisakai/propagational-voting/releases/tag/snapshots-v1), downloaded on demand).
+`benchmark.csv` records `(version, hardware, cell, seed) → wall, peak_rss_mb`. `tests/snapshots.manifest.json` lists the input/output bundles (hosted as a [GitHub release](https://github.com/yasushisakai/propagational-voting/releases/tag/snapshots-v1), downloaded on demand).
+
+`wall_seconds` is only comparable within the same `hardware` value. `peak_rss_mb` is whichever memory number is most relevant to that hardware — host RSS for CPU rows, device-memory peak for GPU rows.
 
 The gatekeeper test confirms an implementation matches the snapshots within `atol=1e-7, rtol=1e-6`:
 
