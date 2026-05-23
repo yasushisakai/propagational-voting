@@ -50,7 +50,7 @@ SNAPSHOT_DIR = os.path.join(REPO_ROOT, "tests", "snapshots")
 MANIFEST_PATH = os.path.join(REPO_ROOT, "tests", "snapshots.manifest.json")
 CSV_PATH = os.path.join(REPO_ROOT, "benchmark.csv")
 
-RELEASE_TAG = "snapshots-v2"
+RELEASE_TAG = "snapshot-v2"
 RELEASE_BASE_URL = (
     "https://github.com/yasushisakai/propagational-voting"
     f"/releases/download/{RELEASE_TAG}"
@@ -59,12 +59,12 @@ RELEASE_BASE_URL = (
 # Label for the rows this script writes to benchmark.csv. Future implementations
 # (squaring, scipy.sparse, C+Accelerate, Swift+Metal) should use their own
 # label and append to the same CSV so versions can be compared side-by-side.
-VERSION = "squaring_fp32"
+VERSION = "cupy"
 
 # Hardware tag stored alongside each row. Wall-times only compare within the
 # same (version, hardware) pair. Override on branches that target accelerators
 # (e.g. "RTX 6000 Ada").
-HARDWARE = "M1 Max"
+HARDWARE = "RTX 6000 Ada"
 
 # (n_delegates, n_intermediates, n_policies, seeds)
 # All cells produce snapshots. "slow" marker on the gatekeeper test is decided
@@ -164,11 +164,20 @@ def save_snapshot(
 
 
 def peak_rss_mb() -> float:
-    # macOS reports ru_maxrss in bytes; Linux reports KB.
-    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    if platform.system() == "Darwin":
-        return rss / (1024 * 1024)
-    return rss / 1024
+    """Peak memory most relevant to this hardware in MB.
+
+    On the GPU branch this is the cupy memory-pool peak (device-side); on CPU
+    branches it's host RSS via getrusage. macOS reports ru_maxrss in bytes;
+    Linux reports KB. See README for the per-hardware semantics caveat.
+    """
+    try:
+        import cupy as cp
+        return cp.get_default_memory_pool().total_bytes() / (1024 * 1024)
+    except ImportError:
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if platform.system() == "Darwin":
+            return rss / (1024 * 1024)
+        return rss / 1024
 
 
 def load_existing_csv() -> tuple[dict[tuple, dict], list[dict]]:
@@ -256,6 +265,13 @@ def main() -> None:
                 continue
 
             delegates, intermediates, policies = make_inputs(n_d, n_i, n_p, seed)
+            # Free GPU pool between cells so peak_rss_mb reads a per-cell peak,
+            # not the cumulative high-water across all cells. No-op on CPU.
+            try:
+                import cupy as _cp
+                _cp.get_default_memory_pool().free_all_blocks()
+            except ImportError:
+                pass
             t0 = time.perf_counter()
             consensus, influences = compute(delegates, intermediates, policies)
             wall = time.perf_counter() - t0

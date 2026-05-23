@@ -1,6 +1,6 @@
 {
-  "release_tag": "snapshots-v2",
-  "base_url": "https://github.com/yasushisakai/propagational-voting/releases/download/snapshots-v2",
+  "release_tag": "snapshot-v2",
+  "base_url": "https://github.com/yasushisakai/propagational-voting/releases/download/snapshot-v2",
   "ppv_git_sha": "465c77bf59c3783b6da9cefd12eca8f6314a81e7",
   "files": [
     {

@@ -2,9 +2,20 @@ import logging
 import warnings
 from typing import Literal, NamedTuple
 
+import cupy as cp
 import numpy as np
+from cupy.cuda import cublas
 
 log = logging.getLogger(__name__)
+
+# Enable TF32 on the default device's cuBLAS handle. On Ampere+ (incl. Ada)
+# this makes sgemm dispatch to TF32 tensor cores: ~10-bit mantissa inputs,
+# fp32 accumulation. Error stays within what squaring_fp32 already exhibits;
+# rankings are preserved per check_cuda_error.py.
+cublas.setMathMode(
+    cp.cuda.Device().cublas_handle,
+    cublas.CUBLAS_TENSOR_OP_MATH,
+)
 
 Role = Literal["delegate", "intermediate"]
 
@@ -232,27 +243,28 @@ def compute_matrix(
     #   T_{m+1} = T_m + T_m·P_m   P_{m+1} = P_m·P_m
     # Reaches V^k after ~log2(k) squarings instead of k sequential GEMMs.
     # T_inf equals the transient block of the original `influence` matrix.
-    q = v[:ndi, :ndi]
-    r = v[ndi:, :ndi]
+    # GEMMs run on the GPU via cuBLAS sgemm with TF32 enabled.
+    q = cp.asarray(v[:ndi, :ndi], dtype=cp.float32)
+    r = cp.asarray(v[ndi:, :ndi], dtype=cp.float32)
 
     p = q.copy()
-    t = np.eye(ndi, dtype=np.float32)
+    t = cp.eye(ndi, dtype=cp.float32)
 
     for _ in range(max_iter):
-        if p.max() < tol:
+        if float(p.max()) < tol:
             break
         t = t + t @ p
         p = p @ p
     else:
         warnings.warn(
             f"did not converge within {max_iter} squarings "
-            f"(max transient mass = {p.max():.2e})",
+            f"(max transient mass = {float(p.max()):.2e})",
             stacklevel=2,
         )
 
-    e_d = np.zeros(ndi, dtype=np.float32)
+    e_d = cp.zeros(ndi, dtype=cp.float32)
     e_d[:num_delegates] = 1.0
-    policy_totals = (r @ t @ e_d).tolist()
+    policy_totals = cp.asnumpy(r @ t @ e_d).tolist()
     consensus = sorted(
         (
             Consensus(label, value)
@@ -262,7 +274,7 @@ def compute_matrix(
         reverse=True,
     )
 
-    inf_values = (t.sum(axis=1) / t.diagonal()).tolist()
+    inf_values = cp.asnumpy(t.sum(axis=1) / t.diagonal()).tolist()
     roles: list[Role] = ["delegate"] * num_delegates + [
         "intermediate"
     ] * num_intermediates

@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# CUDA 12.x runtime; works against the system driver on the cuda branch.
+# (No cupy-cuda13x wheel exists at time of writing; driver is backward-compatible.)
+cupy-cuda12x
