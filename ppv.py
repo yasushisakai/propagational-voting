@@ -1,4 +1,5 @@
 import logging
+import os
 import warnings
 from typing import Literal, NamedTuple
 
@@ -26,6 +27,121 @@ _SWITCH_THRESH = 0.0
 _ALPHA_FP32 = np.array(1.0, dtype=np.float32)
 _BETA0_FP32 = np.array(0.0, dtype=np.float32)
 _BETA1_FP32 = np.array(1.0, dtype=np.float32)
+
+
+# --- multi-GPU helpers (cupy_multi branch infrastructure) ----------------
+# Foundation for the sharded squaring kernel. See MULTI_GPU_PLAN.md for the
+# overall design. At this commit these helpers are not yet wired into
+# compute_matrix — the public path remains single-GPU cupy_fp16. Subsequent
+# commits replace the loop body with a sharded version that calls these.
+
+_NUM_GPUS = 3
+_NCCL_COMMS: list | None = None  # lazy init via _get_nccl_comms()
+_HEADROOM_OVERHEAD_BYTES = int(1.5e9)   # cuBLAS workspace, framework, slack
+# Per-element bytes inside one row-shard (size ndi/p × ndi). The shard holds:
+#   P_local, T_local, P_ring, p_new, ring_scratch  : 4 B each fp32 = 20 B
+#   fp16 casts of P_local, P_ring, T_local         : 2 B each      =  6 B
+# Some of those can share buffers in practice but we size for the worst case
+# so the memory gate is honestly conservative.
+_HEADROOM_BYTES_PER_NDI2 = 26
+
+
+def _get_nccl_comms() -> list:
+    """Lazy-init NCCL communicators, one rank per GPU. Returns ``list[NcclCommunicator]``.
+
+    Single-process multi-device: uses ``NcclCommunicator.initAll`` which does
+    the rendezvous internally. Calling the constructor in a sequential loop
+    deadlocks (each call blocks for all ranks to join), which initAll avoids.
+    """
+    global _NCCL_COMMS
+    if _NCCL_COMMS is not None:
+        return _NCCL_COMMS
+    from cupy.cuda import nccl  # imported lazily; cupy_fp16 doesn't need it
+
+    n_visible = cp.cuda.runtime.getDeviceCount()
+    if n_visible < _NUM_GPUS:
+        raise RuntimeError(
+            f"cupy_multi needs {_NUM_GPUS} GPUs visible; only {n_visible} found. "
+            "Set CUDA_VISIBLE_DEVICES=0,1,2 (or equivalent)."
+        )
+
+    _NCCL_COMMS = nccl.NcclCommunicator.initAll(_NUM_GPUS)
+    return _NCCL_COMMS
+
+
+def _pad_ndi(ndi: int, p: int = _NUM_GPUS) -> int:
+    """Round ndi up to the nearest multiple of p so row-shards are equal size."""
+    return ((ndi + p - 1) // p) * p
+
+
+def _estimate_per_gpu_bytes(ndi: int, p: int = _NUM_GPUS) -> int:
+    """Estimated peak device-memory use on one GPU under the sharded plan.
+
+    Formula (see MULTI_GPU_PLAN.md): 16·ndi²/p + 1.5 GB framework overhead.
+    """
+    ndi_padded = _pad_ndi(ndi, p)
+    return _HEADROOM_BYTES_PER_NDI2 * ndi_padded * ndi_padded // p + _HEADROOM_OVERHEAD_BYTES
+
+
+def _check_gpu_memory(ndi: int, p: int = _NUM_GPUS) -> None:
+    """Pre-flight: verify each GPU has free memory ≥ estimated peak × (1+headroom).
+
+    Reads ``PPV_HEADROOM_FRACTION`` (default 0.30) and ``PPV_SKIP_MEMORY_CHECK``
+    env vars. Raises ``RuntimeError`` naming every GPU that's short.
+    """
+    if os.environ.get("PPV_SKIP_MEMORY_CHECK") == "1":
+        return
+
+    headroom = float(os.environ.get("PPV_HEADROOM_FRACTION", "0.30"))
+    est = _estimate_per_gpu_bytes(ndi, p)
+    need = int(est * (1.0 + headroom))
+
+    shortfalls = []
+    for i in range(p):
+        with cp.cuda.Device(i):
+            free, total = cp.cuda.runtime.memGetInfo()
+        if free < need:
+            shortfalls.append((i, free, total))
+
+    if not shortfalls:
+        return
+
+    lines = [
+        f"cupy_multi needs ~{need / 1e9:.1f} GB free on each of {p} GPUs "
+        f"(ndi={ndi}: est compute {est / 1e9:.1f} GB × {1 + headroom:.2f} headroom):",
+    ]
+    for i, free, total in shortfalls:
+        lines.append(f"  GPU {i}: {free / 1e9:.1f} GB free / {total / 1e9:.1f} GB total")
+    lines.append(
+        "Free up GPU memory, lower PPV_HEADROOM_FRACTION, or set "
+        "PPV_SKIP_MEMORY_CHECK=1 to override."
+    )
+    raise RuntimeError("\n".join(lines))
+
+
+def _shard_q(
+    v_host: np.ndarray, ndi: int, p: int = _NUM_GPUS
+) -> list[cp.ndarray]:
+    """Shard Q = v[:ndi, :ndi] by rows onto p GPUs.
+
+    Returns a list of length p; entry i is the (ndi_padded/p, ndi_padded)
+    cupy array resident on device i. Padded rows/cols are zero so the
+    squaring math is unaffected.
+    """
+    ndi_padded = _pad_ndi(ndi, p)
+    shard_rows = ndi_padded // p
+
+    q_padded = np.zeros((ndi_padded, ndi_padded), dtype=np.float32)
+    q_padded[:ndi, :ndi] = v_host[:ndi, :ndi]
+
+    shards: list[cp.ndarray] = []
+    for i in range(p):
+        with cp.cuda.Device(i):
+            shards.append(cp.asarray(q_padded[i * shard_rows:(i + 1) * shard_rows]))
+    return shards
+
+
+# --- end multi-GPU helpers -----------------------------------------------
 
 
 def _gemm_acc(

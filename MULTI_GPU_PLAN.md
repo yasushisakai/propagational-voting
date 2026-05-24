@@ -123,17 +123,21 @@ Estimated per-GPU peak at ndi (p=3):
 |---|---|
 | P_local fp32 | 4·(ndi/p)·ndi |
 | T_local fp32 | 4·(ndi/p)·ndi |
-| P_ring fp32 (incoming shard) | 4·(ndi/p)·ndi |
+| P_ring fp32 (incoming shard during rotation) | 4·(ndi/p)·ndi |
+| p_new fp32 (ping-pong target for P=P·P) | 4·(ndi/p)·ndi |
+| ring accumulate scratch fp32 (T += partials) | 4·(ndi/p)·ndi |
 | fp16 cast of P_local | 2·(ndi/p)·ndi |
 | fp16 cast of P_ring | 2·(ndi/p)·ndi |
 | fp16 cast of T_local | 2·(ndi/p)·ndi |
 | cuBLAS workspace, framework | ~1.5 GB constant |
 
-Total formula: `est_bytes ≈ (16 · ndi²)/p + 1.5e9`.
+Total formula: `est_bytes ≈ (26 · ndi²)/p + 1.5e9`. Some of those buffers can
+share storage in a tighter implementation, but we size for the worst case so
+the memory gate doesn't surprise the user with an OOM.
 
-At ndi=20000, p=3: ~3.6 GB compute + 1.5 GB overhead = **~5 GB per GPU**.
-At ndi=44000 (single-GPU cap): ~10 GB + 1.5 GB = **~12 GB per GPU**.
-At ndi=66000 (theoretical 3-GPU cap): ~23 GB + 1.5 GB = **~25 GB per GPU**.
+At ndi=20000, p=3: ~3.4 GB compute + 1.5 GB overhead = **~5 GB per GPU**.
+At ndi=44000 (single-GPU cap): ~16.8 GB + 1.5 GB = **~18 GB per GPU**.
+At ndi=66000 (theoretical 3-GPU cap): ~37.8 GB + 1.5 GB = **~39 GB per GPU**.
 
 ## Numerical impact
 

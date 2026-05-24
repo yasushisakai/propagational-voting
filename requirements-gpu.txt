@@ -3,3 +3,7 @@
 # CUDA 12.x runtime; works against the system driver on the cuda branch.
 # (No cupy-cuda13x wheel exists at time of writing; driver is backward-compatible.)
 cupy-cuda12x
+
+# Multi-GPU collective communication (used by the cupy_multi branch).
+# cupy_fp16 doesn't require it; installing it doesn't hurt that branch.
+nvidia-nccl-cu12>=2.18.1,<3
